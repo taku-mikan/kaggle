@@ -16,9 +16,9 @@ import wandb
 from albumentations.pytorch import ToTensorV2
 from IPython import display
 from sklearn.model_selection import (KFold, StratifiedGroupKFold,
-                                     StratifiedKFold)
+                                        StratifiedKFold)
 
-pd.options.plotting.backend = "plotly"
+# pd.options.plotting.backend = "plotly"
 import os
 import random
 import shutil
@@ -176,7 +176,7 @@ def valid_one_epoch(model, optimizer, dataloader, device, epoch):
     
     return epoch_loss, val_scores
 
-def run_training(model, optimizer, scheduler, device, num_epochs, train_loader, valid_loader, run, fold):
+def run_training(model, optimizer, scheduler, device, num_epochs, train_loader, valid_loader, run, fold, n_accumulate):
     # To automatically log gradients
     wandb.watch(model, log_freq=100)
     
@@ -194,11 +194,13 @@ def run_training(model, optimizer, scheduler, device, num_epochs, train_loader, 
         print(f'Epoch {epoch}/{num_epochs}', end='')
         train_loss = train_one_epoch(model, optimizer, scheduler, 
                                             dataloader=train_loader, 
-                                            device=device, epoch=epoch)
+                                            device=device, epoch=epoch,
+                                            n_accumulate=n_accumulate)
         
-        val_loss, val_scores = valid_one_epoch(model, valid_loader, 
+        val_loss, val_scores = valid_one_epoch(model, optimizer, valid_loader, 
                                                     device=device, 
-                                                    epoch=epoch)
+                                                    epoch=epoch,
+                                                    )
         val_dice, val_jaccard = val_scores
     
         history['Train Loss'].append(train_loss)
@@ -286,11 +288,11 @@ def main(args: argparse.Namespace):
         anonymous = "must"
 
     # データセットの作成
-    path_df = pd.DataFrame(glob('./datasets/images/images/*'), columns=['image_path'])
-    path_df['mask_path'] = path_df.image_path.str.replace('image','mask')
+    path_df = pd.DataFrame(glob('./datasets/image_datasets/images/images/*'), columns=['image_path'])
+    path_df['mask_path'] = path_df.image_path.str.replace('images','masks')
     path_df['id'] = path_df.image_path.map(lambda x: x.split('/')[-1].replace('.npy',''))
 
-    df = pd.read_csv('./masks/train.csv')
+    df = pd.read_csv('./datasets/mask_datasets/train.csv')
     df['segmentation'] = df.segmentation.fillna('')
     df['rle_len'] = df.segmentation.map(len) # length of each rle mask
 
@@ -309,11 +311,12 @@ def main(args: argparse.Namespace):
     fault2 = 'case81_day30'
     df = df[~df['id'].str.contains(fault1) & ~df['id'].str.contains(fault2)].reset_index(drop=True)
 
+    # TODO: ここまではOK
     # create folds
     skf = StratifiedGroupKFold(n_splits=args.n_fold, shuffle=True, random_state=args.seed)
     for fold, (train_idx, val_idx) in enumerate(skf.split(df, df['empty'], groups = df["case"])):
         df.loc[val_idx, 'fold'] = fold
-    display(df.groupby(['fold','empty'])['id'].count())
+    # display(df.groupby(['fold','empty'])['id'].count())
 
     # augumentaiton
     data_transforms = {
@@ -332,18 +335,20 @@ def main(args: argparse.Namespace):
             ], p=1.0)
     }
 
+    # TODO: ここでではOK
     # dataloaderの作成
-    train_loader, valid_loader = prepare_loaders(df, fold=0, debug=True)
+    train_loader, valid_loader = prepare_loaders(df, fold=0, debug=True, train_bs=args.train_bs, valid_bs=args.valid_bs, transforms=data_transforms)
 
     gc.collect()
 
     # モデルの作成
-    model = build_model()
+    model = build_model(backbone=args.backbone, num_classes=args.num_classes, device=device)
     # Optimizerの設定
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
     # schedulerの設定
-    scheduler = fetch_scheduler(optimizer)
-
+    scheduler = fetch_scheduler(
+        optimizer, scheduler=args.scheduler, 
+        min_lr=args.min_lr, T_0 = args.T_0, T_max=args.T_max)
 
     # 損失関数 / Metricの設定
     JaccardLoss = smp.losses.JaccardLoss(mode='multilabel')
@@ -363,7 +368,8 @@ def main(args: argparse.Namespace):
     # summaryの表示
 
     # train / test
-    for fold in args.folds:
+    # TODO: ここまでOK
+    for fold in tqdm(args.folds):
         print(f'#'*15)
         print(f'### Fold: {fold}')
         print(f'#'*15)
@@ -373,13 +379,23 @@ def main(args: argparse.Namespace):
                         name=f"fold-{fold}|dim-{args.img_size[0]}x{args.img_size[1]}|model-{args.model_name}",
                         group=args.comment,
                         )
-        train_loader, valid_loader = prepare_loaders(fold=fold, debug=args.debug)
-        model     = build_model()
+        train_loader, valid_loader = prepare_loaders(df, fold=fold,
+                                                        train_bs=args.train_bs,
+                                                        valid_bs=args.valid_bs,
+                                                        transforms=data_transforms,
+                                                        debug=args.debug,
+                                                        )
+        model     = build_model(backbone=args.backbone, num_classes=args.num_classes, device=device)
         optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
-        scheduler = fetch_scheduler(optimizer)
+        scheduler = fetch_scheduler(optimizer, scheduler=args.scheduler, min_lr=args.min_lr, T_0=args.min_lr, T_max=args.T_max)
         model, history = run_training(model, optimizer, scheduler,
-                                    device=args.device,
-                                    num_epochs=args.epochs)
+                                    device=device,
+                                    num_epochs=args.epochs,
+                                    train_loader=train_loader,
+                                    valid_loader=valid_loader,
+                                    run=run,
+                                    fold=fold,
+                                    n_accumulate=args.n_accumulate)
         run.finish()
         display(ipd.IFrame(run.url, width=1000, height=720))
     
@@ -404,7 +420,6 @@ def main(args: argparse.Namespace):
     preds = torch.mean(torch.stack(preds, dim=0), dim=0).cpu().detach()
 
     plot_batch(imgs, preds, size=5)
-
     # wandbのlogの作成
 
     # 各種設定
@@ -421,23 +436,29 @@ def parse_args():
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--exp_name", type=str, default="2.50")
     parser.add_argument("--model", choices=["Unet"], default="Unet")
-    parser.add_argument("--backbone", type=str, default="efficientnet-b8")
-    parser.add_argument("batch_size", type=int, default=64)
-    parser.add_argument('--ilist', required=True, nargs="*", type=int, default=[160, 192])
+    parser.add_argument("--backbone", type=str, default="efficientnet-b4")
+    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--train_bs", type=int, default=32)
+    parser.add_argument("--valid_bs", type=int, default=64)
+    parser.add_argument('--img_size', nargs="*", type=int, default=[160, 192])
     parser.add_argument("--img_h", type=int, default=160)
     parser.add_argument("--img_w", type=int, default=192)
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--lr", type=float, default=2e-3)
     parser.add_argument("--scheduler", choices=["CosineAnnealingLR"], default="CosineAnnealingLR")
-    parser.add_argument("min_lr", type=float, default=1e-6)
-    parser.add_argument("T-max", type=int, default=143)
-    parser.add_argument("--T_0", 25)
+    parser.add_argument("--min_lr", type=float, default=1e-6)
+    parser.add_argument("--T-max", type=int, default=143)
+    parser.add_argument("--T_0", type=int, default=25)
     parser.add_argument("--warmup_epochs", type=int, default=0)
     parser.add_argument("--wd", type=float, default=1e-6)
     parser.add_argument("--n_accumulate", type=float, default=1)
     parser.add_argument("--n_fold", type=int, default=5)
-    parser.add_argument("num_classes", type=int, default=3)
+    parser.add_argument("--num_classes", type=int, default=3)
+    parser.add_argument('--folds', nargs="*", type=int, default=[0])
+    parser.add_argument("--model_name", type=str, default="UNet")
+    parser.add_argument("--comment", type=str, default='unet-efficientnet_b0-160x192-ep=5')
 
+    return parser.parse_args()
 
 if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

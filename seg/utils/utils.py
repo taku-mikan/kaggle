@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import tensorflow as tf
+# import tensorflow as tf
 import torch
 from matplotlib.patches import Rectangle
 
@@ -80,8 +80,9 @@ def rgb2gray(mask):
     return gray_mask
 
 def gray2rgb(mask):
-    rgb_mask = tf.keras.utils.to_categorical(mask, num_classes=4)
-    return rgb_mask[..., 1:].astype(mask.dtype)
+    # rgb_mask = tf.keras.utils.to_categorical(mask, num_classes=4)
+    # return rgb_mask[..., 1:].astype(mask.dtype)
+    pass
 
 ## --- Image ---
 def load_img(path):

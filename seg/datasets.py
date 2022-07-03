@@ -47,14 +47,20 @@ class BuildDataset(torch.utils.data.Dataset):
             img = np.transpose(img, (2, 0, 1))
             return torch.tensor(img)
 
-def prepare_loaders(df, fold, train_bs, valid_bs, debug=False):
+def prepare_loaders(
+    df, 
+    fold, 
+    train_bs, 
+    valid_bs,
+    transforms, 
+    debug=False):
     train_df = df.query("fold!=@fold").reset_index(drop=True)
     valid_df = df.query("fold==@fold").reset_index(drop=True)
     if debug:
         train_df = train_df.head(32*5).query("empty==0")
         valid_df = valid_df.head(32*3).query("empty==0")
-    train_dataset = BuildDataset(train_df, transforms=data_transforms['train'])
-    valid_dataset = BuildDataset(valid_df, transforms=data_transforms['valid'])
+    train_dataset = BuildDataset(train_df, transforms=transforms['train'])
+    valid_dataset = BuildDataset(valid_df, transforms=transforms['valid'])
 
     train_loader = DataLoader(train_dataset, batch_size=train_bs if not debug else 20, 
                               num_workers=4, shuffle=True, pin_memory=True, drop_last=False)
