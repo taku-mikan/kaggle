@@ -13,8 +13,8 @@ def build_model(backbone, num_classes, device):
     model.to(device)
     return model
 
-def load_model(path):
-    model = build_model()
+def load_model(path, backbone, num_classes, device):
+    model = build_model(backbone, num_classes, device)
     model.load_state_dict(torch.load(path))
     model.eval()
     return model

@@ -368,7 +368,6 @@ def main(args: argparse.Namespace):
     # summaryの表示
 
     # train / test
-    # TODO: ここまでOK
     for fold in tqdm(args.folds):
         print(f'#'*15)
         print(f'### Fold: {fold}')
@@ -397,7 +396,7 @@ def main(args: argparse.Namespace):
                                     fold=fold,
                                     n_accumulate=args.n_accumulate)
         run.finish()
-        display(ipd.IFrame(run.url, width=1000, height=720))
+        # display(ipd.IFrame(run.url, width=1000, height=720))
     
 
     # Prediction
@@ -406,11 +405,11 @@ def main(args: argparse.Namespace):
     test_loader  = DataLoader(test_dataset, batch_size=5, 
                             num_workers=4, shuffle=False, pin_memory=True)
     imgs = next(iter(test_loader))
-    imgs = imgs.to(args.device, dtype=torch.float)
+    imgs = imgs.to(device, dtype=torch.float)
 
     preds = []
     for fold in args.folds:
-        model = load_model(f"best_epoch-{fold:02d}.bin")
+        model = load_model(f"best_epoch-{fold:02d}.bin", args.backbone, args.num_classes, device)
         with torch.no_grad():
             pred = model(imgs)
             pred = (nn.Sigmoid()(pred)>0.5).double()
