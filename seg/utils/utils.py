@@ -1,14 +1,8 @@
-import argparse
-import json
 import random
-import sys
-
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
-# import tensorflow as tf
 import torch
 from matplotlib.patches import Rectangle
 
