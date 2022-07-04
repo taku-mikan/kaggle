@@ -1,78 +1,41 @@
 import argparse
 import datetime
+import warnings
+import copy
+import time
 import gc
-import glob
+import os
+import gc
+from collections import defaultdict
+from glob import glob
+from tqdm import tqdm
+tqdm.pandas()
 
+from   colorama import Fore, Style
 import albumentations as A
-import matplotlib.pyplot as plt
-#
+import segmentation_models_pytorch as smp
 import numpy as np
 import pandas as pd
-import segmentation_models_pytorch as smp
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import wandb
-from albumentations.pytorch import ToTensorV2
-from IPython import display
-from sklearn.model_selection import (KFold, StratifiedGroupKFold,
-                                        StratifiedKFold)
-
-# pd.options.plotting.backend = "plotly"
-import os
-import random
-import shutil
-from glob import glob
-
-from tqdm import tqdm
-
-tqdm.pandas()
-import copy
-import gc
-import time
-from collections import defaultdict
-
-# Albumentations for augmentations
-import albumentations as A
-# visualization
-import cv2
-import joblib
-import matplotlib.pyplot as plt
-import rasterio
-import timm
-# PyTorch 
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from albumentations.pytorch import ToTensorV2
-# For colored terminal text
-from colorama import Back, Fore, Style
-from IPython import display as ipd
-from joblib import Parallel, delayed
-from matplotlib.patches import Rectangle
-# Sklearn
-from sklearn.model_selection import (KFold, StratifiedGroupKFold,
-                                     StratifiedKFold)
 from torch.cuda import amp
 from torch.optim import lr_scheduler
-from torch.utils.data import DataLoader, Dataset
-
-c_  = Fore.GREEN
-sr_ = Style.RESET_ALL
-
-import warnings
-
-warnings.filterwarnings("ignore")
-
-# For descriptive error messages
-os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-#
+from torch.utils.data import DataLoader
+from sklearn.model_selection import StratifiedGroupKFold
 
 from datasets import BuildDataset, prepare_loaders
 from losses.losses import criterion, dice_coef, iou_coef
 from metric.base import Metric
 from models.models import build_model, load_model
 from utils.utils import fix_seed, plot_batch
+
+c_  = Fore.GREEN
+sr_ = Style.RESET_ALL
+warnings.filterwarnings("ignore")
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+
 
 
 def wandb_log(loss: float, metrics:Metric, phase:str) -> None:
@@ -227,14 +190,14 @@ def run_training(model, optimizer, scheduler, device, num_epochs, train_loader, 
             run.summary["Best Jaccard"] = best_jaccard
             run.summary["Best Epoch"]   = best_epoch
             best_model_wts = copy.deepcopy(model.state_dict())
-            PATH = f"best_epoch-{fold:02d}.bin"
+            PATH = f"checkpoints/best_epoch-{fold:02d}.bin"
             torch.save(model.state_dict(), PATH)
             # Save a model file from the current directory
             wandb.save(PATH)
             print(f"Model Saved{sr_}")
             
         last_model_wts = copy.deepcopy(model.state_dict())
-        PATH = f"last_epoch-{fold:02d}.bin"
+        PATH = f"checkpoints/last_epoch-{fold:02d}.bin"
         torch.save(model.state_dict(), PATH)
             
         print(); print()
