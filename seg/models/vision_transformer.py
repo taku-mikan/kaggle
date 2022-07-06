@@ -41,7 +41,7 @@ class SwinUnet(nn.Module):
                                 drop_rate=config.drop_rate,
                                 drop_path_rate=config.drop_path_rate,
                                 ape=config.ape,
-                                patch_norm=config.path_norm,
+                                patch_norm=config.patch_norm,
                                 use_checkpoint=config.use_checkpoint)
 
     def forward(self, x):
