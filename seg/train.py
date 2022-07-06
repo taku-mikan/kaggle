@@ -141,7 +141,7 @@ def valid_one_epoch(model, optimizer, dataloader, device, epoch):
     
     return epoch_loss, val_scores
 
-def run_training(model, optimizer, scheduler, device, num_epochs, train_loader, valid_loader, run, fold, n_accumulate):
+def run_training(model, model_name, optimizer, scheduler, device, num_epochs, train_loader, valid_loader, run, fold, n_accumulate):
     # To automatically log gradients
     wandb.watch(model, log_freq=100)
     
@@ -192,14 +192,14 @@ def run_training(model, optimizer, scheduler, device, num_epochs, train_loader, 
             run.summary["Best Jaccard"] = best_jaccard
             run.summary["Best Epoch"]   = best_epoch
             best_model_wts = copy.deepcopy(model.state_dict())
-            PATH = f"checkpoints/{model}_best_epoch-{fold:02d}.bin"
+            PATH = f"checkpoints/{model_name}_best_epoch-{fold:02d}.bin"
             torch.save(model.state_dict(), PATH)
             # Save a model file from the current directory
             wandb.save(PATH)
             print(f"Model Saved{sr_}")
             
         last_model_wts = copy.deepcopy(model.state_dict())
-        PATH = f"checkpoints/{model}_last_epoch-{fold:02d}.bin"
+        PATH = f"checkpoints/{model_name}_last_epoch-{fold:02d}.bin"
         torch.save(model.state_dict(), PATH)
             
         print(); print()
@@ -338,7 +338,7 @@ def main(args: argparse.Namespace):
         scheduler = fetch_scheduler(optimizer, scheduler=args.scheduler, min_lr=args.min_lr, T_0=args.min_lr, T_max=args.T_max)
         
         # 学習
-        model, history = run_training(model, optimizer, scheduler,
+        model, history = run_training(model, args.model, optimizer, scheduler,
                                     device=device,
                                     num_epochs=args.epochs,
                                     train_loader=train_loader,
