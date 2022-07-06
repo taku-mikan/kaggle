@@ -1,6 +1,6 @@
 wandb/
 *.bin
-*.csv
-.vscode/
 pretrained_ckpt/
 config/
+.vscode/
+*.csv

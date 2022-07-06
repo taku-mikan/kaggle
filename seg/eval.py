@@ -27,7 +27,7 @@ tqdm.pandas()
 
 
 @torch.no_grad()
-def inference(model_paths, test_loader, thr, device, debug, backbone, num_classes, num_log: int=1, img_size, config):
+def inference(model_paths, test_loader, thr, device, debug, backbone, num_classes, img_size, config, num_log: int=1):
     msks = []; imgs = [];
     pred_strings = []; pred_ids = []; pred_classes = [];
     for idx, (img, ids, heights, widths) in enumerate(tqdm(test_loader, total=len(test_loader), desc='Infer ')):

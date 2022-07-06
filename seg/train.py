@@ -358,7 +358,7 @@ def main(args: argparse.Namespace):
 
     preds = []
     for fold in args.folds:
-        model = load_model(f"checkpoints/best_epoch-{fold:02d}.bin", args.backbone, args.num_classes, device)
+        model = load_model(f"checkpoints/best_epoch-{fold:02d}.bin", args.backbone, args.num_classes, device, args.img_size, model, args)
         with torch.no_grad():
             pred = model(imgs)
             pred = (nn.Sigmoid()(pred)>0.5).double()
