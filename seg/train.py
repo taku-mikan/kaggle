@@ -201,8 +201,7 @@ def run_training(model, model_name, optimizer, scheduler, device, num_epochs, tr
         last_model_wts = copy.deepcopy(model.state_dict())
         PATH = f"checkpoints/{model_name}_last_epoch-{fold:02d}.bin"
         torch.save(model.state_dict(), PATH)
-            
-        print(); print()
+    
     
     end = time.time()
     time_elapsed = end - start

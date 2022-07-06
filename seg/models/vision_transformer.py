@@ -33,6 +33,7 @@ class SwinUnet(nn.Module):
                                 num_classes=self.num_classes,
                                 embed_dim=config.embed_dim,
                                 depths=config.depths,
+                                depths_decoder=config.depths_decoder,
                                 num_heads=config.num_heads,
                                 window_size=config.window_size,
                                 mlp_ratio=config.mlp_ratio,
