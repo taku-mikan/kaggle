@@ -13,6 +13,7 @@ def build_model(backbone, num_classes, device, img_size, model="Unet", config=No
             activation=None,
         )
     elif model == "SwinUnet":
+        print("Select SwinUnet")
         model = SwinUnet(config, img_size, num_classes)
 
     model.to(device)
