@@ -25,11 +25,13 @@ from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedGroupKFold
 
-from datasets import BuildDataset, prepare_loaders
+from data.datasets import BuildDataset, prepare_loaders
+from data.__init__ import make_DataFrame
 from losses.losses import criterion, dice_coef, iou_coef
 from metric.base import Metric
 from models.models import build_model, load_model
 from utils.utils import fix_seed, plot_batch
+from utils.utils import parse_with_config
 
 c_  = Fore.GREEN
 sr_ = Style.RESET_ALL
@@ -61,7 +63,7 @@ def train_one_epoch(model, optimizer, scheduler, dataloader, device, epoch, n_ac
     running_loss = 0.0
     
     pbar = tqdm(enumerate(dataloader), total=len(dataloader), desc='Train ')
-    for step, (images, masks) in pbar:         
+    for step, (images, masks) in pbar:       
         images = images.to(device, dtype=torch.float)
         masks  = masks.to(device, dtype=torch.float)
         
@@ -251,30 +253,8 @@ def main(args: argparse.Namespace):
         anonymous = "must"
 
     # データセットの作成
-    path_df = pd.DataFrame(glob('./datasets/image_datasets/images/images/*'), columns=['image_path'])
-    path_df['mask_path'] = path_df.image_path.str.replace('images','masks')
-    path_df['id'] = path_df.image_path.map(lambda x: x.split('/')[-1].replace('.npy',''))
+    df = make_DataFrame()
 
-    df = pd.read_csv('./datasets/mask_datasets/train.csv')
-    df['segmentation'] = df.segmentation.fillna('')
-    df['rle_len'] = df.segmentation.map(len) # length of each rle mask
-
-    df2 = df.groupby(['id'])['segmentation'].agg(list).to_frame().reset_index() # rle list of each id
-    df2 = df2.merge(df.groupby(['id'])['rle_len'].agg(sum).to_frame().reset_index()) # total length of all rles of each id
-
-    df = df.drop(columns=['segmentation', 'class', 'rle_len'])
-    df = df.groupby(['id']).head(1).reset_index(drop=True)
-    df = df.merge(df2, on=['id'])
-    df['empty'] = (df.rle_len==0) # empty masks
-
-    df = df.drop(columns=['image_path','mask_path'])
-    df = df.merge(path_df, on=['id'])
-
-    fault1 = 'case7_day0'
-    fault2 = 'case81_day30'
-    df = df[~df['id'].str.contains(fault1) & ~df['id'].str.contains(fault2)].reset_index(drop=True)
-
-    # TODO: ここまではOK
     # create folds
     skf = StratifiedGroupKFold(n_splits=args.n_fold, shuffle=True, random_state=args.seed)
     for fold, (train_idx, val_idx) in enumerate(skf.split(df, df['empty'], groups = df["case"])):
@@ -284,6 +264,7 @@ def main(args: argparse.Namespace):
     # augumentaiton
     data_transforms = {
         "train": A.Compose([
+            A.Resize(args.img_size[0], args.img_size[1]),
             A.HorizontalFlip(p=0.5),
             A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.05, rotate_limit=10, p=0.5),
             A.OneOf([
@@ -295,62 +276,68 @@ def main(args: argparse.Namespace):
             ], p=1.0),
         
         "valid": A.Compose([
+            A.Resize(args.img_size[0], args.img_size[1]),
             ], p=1.0)
     }
 
-    # TODO: ここでではOK
     # dataloaderの作成
-    train_loader, valid_loader = prepare_loaders(df, fold=0, debug=True, train_bs=args.train_bs, valid_bs=args.valid_bs, transforms=data_transforms)
+    train_loader, valid_loader = prepare_loaders(
+        df, fold=0, debug=True, train_bs=args.train_bs, 
+        valid_bs=args.valid_bs, transforms=data_transforms
+    )
 
     gc.collect()
 
     # モデルの作成
-    model = build_model(backbone=args.backbone, num_classes=args.num_classes, device=device)
+    model = build_model(
+        backbone=args.backbone, num_classes=args.num_classes, 
+        device=device, img_size=args.img_size, model=args.model, config=args
+    )
+    
     # Optimizerの設定
-    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+    optimizer = optim.Adam(
+        model.parameters(), lr=args.lr, weight_decay=args.wd
+    )
+    
     # schedulerの設定
     scheduler = fetch_scheduler(
         optimizer, scheduler=args.scheduler, 
-        min_lr=args.min_lr, T_0 = args.T_0, T_max=args.T_max)
-
-    # 損失関数 / Metricの設定
-    JaccardLoss = smp.losses.JaccardLoss(mode='multilabel')
-    DiceLoss    = smp.losses.DiceLoss(mode='multilabel')
-    BCELoss     = smp.losses.SoftBCEWithLogitsLoss()
-    LovaszLoss  = smp.losses.LovaszLoss(mode='multilabel', per_image=False)
-    TverskyLoss = smp.losses.TverskyLoss(mode='multilabel', log_loss=False)
-
-    # run_name の設定
-
-    # Early_stoppingの設定
-
-    # wnadbの設定
-
-    # 重み等のload
-
-    # summaryの表示
+        min_lr=args.min_lr, T_0 = args.T_0, 
+        T_max=args.T_max
+    )
 
     # train / test
-    # TODO: ここまでOK
     for fold in tqdm(args.folds):
         print(f'#'*15)
         print(f'### Fold: {fold}')
         print(f'#'*15)
+        # wandb の設定
         run = wandb.init(project='uw-maddison-gi-tract', 
                         config={k:v for k, v in dict(vars(args)).items() if '__' not in k},
                         anonymous=anonymous,
                         name=f"fold-{fold}|dim-{args.img_size[0]}x{args.img_size[1]}|model-{args.model_name}",
                         group=args.comment,
                         )
-        train_loader, valid_loader = prepare_loaders(df, fold=fold,
-                                                        train_bs=args.train_bs,
-                                                        valid_bs=args.valid_bs,
-                                                        transforms=data_transforms,
-                                                        debug=args.debug,
-                                                        )
-        model     = build_model(backbone=args.backbone, num_classes=args.num_classes, device=device)
+
+        # DataLoader の作成
+        train_loader, valid_loader = \
+            prepare_loaders(
+                            df, fold=fold,
+                            train_bs=args.train_bs,
+                            valid_bs=args.valid_bs,
+                            transforms=data_transforms,
+                            debug=args.debug,
+            )
+        
+        model = build_model(
+            backbone=args.backbone, num_classes=args.num_classes, 
+            device=device, img_size=args.img_size, model=args.model,
+            config=args
+            )
         optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
         scheduler = fetch_scheduler(optimizer, scheduler=args.scheduler, min_lr=args.min_lr, T_0=args.min_lr, T_max=args.T_max)
+        
+        # 学習
         model, history = run_training(model, optimizer, scheduler,
                                     device=device,
                                     num_epochs=args.epochs,
@@ -360,8 +347,6 @@ def main(args: argparse.Namespace):
                                     fold=fold,
                                     n_accumulate=args.n_accumulate)
         run.finish()
-        # display(ipd.IFrame(run.url, width=1000, height=720))
-    
 
     # Prediction
     test_dataset = BuildDataset(df.query("fold==0 & empty==0").sample(frac=1.0), label=False, 
@@ -373,7 +358,7 @@ def main(args: argparse.Namespace):
 
     preds = []
     for fold in args.folds:
-        model = load_model(f"best_epoch-{fold:02d}.bin", args.backbone, args.num_classes, device)
+        model = load_model(f"checkpoints/best_epoch-{fold:02d}.bin", args.backbone, args.num_classes, device)
         with torch.no_grad():
             pred = model(imgs)
             pred = (nn.Sigmoid()(pred)>0.5).double()
@@ -382,12 +367,7 @@ def main(args: argparse.Namespace):
     imgs  = imgs.cpu().detach()
     preds = torch.mean(torch.stack(preds, dim=0), dim=0).cpu().detach()
 
-    plot_batch(imgs, preds, size=5)
-    # wandbのlogの作成
-
-    # 各種設定
-
-    # 重みの設定
+    # plot_batch(imgs, preds, size=5)
 
 
 def parse_args():
@@ -398,7 +378,6 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=101)
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--exp_name", type=str, default="2.50")
-    parser.add_argument("--model", choices=["Unet"], default="Unet")
     parser.add_argument("--backbone", type=str, default="efficientnet-b4")
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--train_bs", type=int, default=32)
@@ -420,8 +399,11 @@ def parse_args():
     parser.add_argument('--folds', nargs="*", type=int, default=[0])
     parser.add_argument("--model_name", type=str, default="UNet")
     parser.add_argument("--comment", type=str, default='unet-efficientnet_b0-160x192-ep=5')
+    parser.add_argument("--model", type=str, default="Unet", choices=["Unet", "SwinUnet"])
+    parser.add_argument("--config", type=str, help="path to config file")
+    parser.add_argument('--use_wandb', action="store_true")
 
-    return parser.parse_args()
+    return parse_with_config(parser)
 
 if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

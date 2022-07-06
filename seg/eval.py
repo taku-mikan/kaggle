@@ -3,6 +3,7 @@ import os
 import argparse
 import warnings
 from glob import glob
+from numpy import argsort
 from tqdm import tqdm
 
 import matplotlib.pyplot as plt 
@@ -14,8 +15,9 @@ from   torch.utils.data import DataLoader
 from colorama import Fore,  Style
 
 from utils.utils_test import fix_seed, get_metadata, path2info, masks2rles
-from datasets import TestDataset
+from data.datasets import TestDataset
 from models.models import load_model
+from utils.utils import parse_with_config
 
 c_  = Fore.GREEN
 sr_ = Style.RESET_ALL
@@ -25,7 +27,7 @@ tqdm.pandas()
 
 
 @torch.no_grad()
-def inference(model_paths, test_loader, thr, device, debug, backbone, num_classes, num_log: int=1):
+def inference(model_paths, test_loader, thr, device, debug, backbone, num_classes, num_log: int=1, img_size, config):
     msks = []; imgs = [];
     pred_strings = []; pred_ids = []; pred_classes = [];
     for idx, (img, ids, heights, widths) in enumerate(tqdm(test_loader, total=len(test_loader), desc='Infer ')):
@@ -34,7 +36,7 @@ def inference(model_paths, test_loader, thr, device, debug, backbone, num_classe
         msk = []
         msk = torch.zeros((size[0], 3, size[2], size[3]), device=device, dtype=torch.float32)
         for path in model_paths:
-            model = load_model(path, backbone, num_classes, device)
+            model = load_model(path, backbone, num_classes, device, img_size, model, config)
             out   = model(img) # .squeeze(0) # removing batch axis
             out   = nn.Sigmoid()(out) # removing channel axis
             msk+=out/len(model_paths)
@@ -61,7 +63,6 @@ def main(args: argparse.Namespace):
     ckpt_dir = 'checkpoints'
 
     # data
-    # TODO: test_datasets
     sub_df = pd.read_csv('datasets/test_datasets/sample_submission.csv')
     if not len(sub_df):
         debug = True
@@ -114,7 +115,7 @@ def main(args: argparse.Namespace):
     test_loader  = DataLoader(test_dataset, batch_size=args.valid_bs, 
                             num_workers=4, shuffle=False, pin_memory=False)
     model_paths  = glob(f'{ckpt_dir}/best_epoch*.bin')
-    pred_strings, pred_ids, pred_classes, imgs, msks = inference(model_paths, test_loader, args.thr, device, debug, args.backbone, args.num_classes)
+    pred_strings, pred_ids, pred_classes, imgs, msks = inference(model_paths, test_loader, args.thr, device, debug, args.backbone, args.num_classes, img_size=args.img_size, config=args)
 
     # visualization
     if debug:
@@ -178,7 +179,7 @@ def parse_args():
     parser.add_argument("--num_classes", type=int, default=3)
     parser.add_argument('--thr', type=float, default=0.40)
     
-    return parser.parse_args()
+    return parse_with_config(parser)
 
 if __name__ == '__main__':
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
