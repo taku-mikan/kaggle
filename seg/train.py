@@ -192,14 +192,14 @@ def run_training(model, optimizer, scheduler, device, num_epochs, train_loader, 
             run.summary["Best Jaccard"] = best_jaccard
             run.summary["Best Epoch"]   = best_epoch
             best_model_wts = copy.deepcopy(model.state_dict())
-            PATH = f"checkpoints/best_epoch-{fold:02d}.bin"
+            PATH = f"checkpoints/{model}_best_epoch-{fold:02d}.bin"
             torch.save(model.state_dict(), PATH)
             # Save a model file from the current directory
             wandb.save(PATH)
             print(f"Model Saved{sr_}")
             
         last_model_wts = copy.deepcopy(model.state_dict())
-        PATH = f"checkpoints/last_epoch-{fold:02d}.bin"
+        PATH = f"checkpoints/{model}_last_epoch-{fold:02d}.bin"
         torch.save(model.state_dict(), PATH)
             
         print(); print()
@@ -265,14 +265,14 @@ def main(args: argparse.Namespace):
     data_transforms = {
         "train": A.Compose([
             A.Resize(args.img_size[0], args.img_size[1]),
-            A.HorizontalFlip(p=0.5),
-            A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.05, rotate_limit=10, p=0.5),
+            # A.HorizontalFlip(p=0.5),
+            # A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.05, rotate_limit=10, p=0.5),
             A.OneOf([
                 A.GridDistortion(num_steps=5, distort_limit=0.05, p=1.0),
                 A.ElasticTransform(alpha=1, sigma=50, alpha_affine=50, p=1.0)
             ], p=0.25),
-            A.CoarseDropout(max_holes=8, max_height=args.img_size[0]//20, max_width=args.img_size[1]//20,
-                                min_holes=5, fill_value=0, mask_fill_value=0, p=0.5),
+            # A.CoarseDropout(max_holes=8, max_height=args.img_size[0]//20, max_width=args.img_size[1]//20,
+            #                     min_holes=5, fill_value=0, mask_fill_value=0, p=0.5),
             ], p=1.0),
         
         "valid": A.Compose([
@@ -366,8 +366,6 @@ def main(args: argparse.Namespace):
         
     imgs  = imgs.cpu().detach()
     preds = torch.mean(torch.stack(preds, dim=0), dim=0).cpu().detach()
-
-    # plot_batch(imgs, preds, size=5)
 
 
 def parse_args():
