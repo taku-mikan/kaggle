@@ -4,3 +4,6 @@ pretrained_ckpt/
 config/
 .vscode/
 *.csv
+
+preprocess/origin_dataset/
+preprocess/origin_dataset/*

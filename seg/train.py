@@ -7,15 +7,12 @@ import gc
 import os
 import gc
 from collections import defaultdict
-from glob import glob
 from tqdm import tqdm
 tqdm.pandas()
 
 from   colorama import Fore, Style
 import albumentations as A
-import segmentation_models_pytorch as smp
 import numpy as np
-import pandas as pd
 import wandb
 import torch
 import torch.nn as nn
@@ -30,7 +27,7 @@ from data.__init__ import make_DataFrame
 from losses.losses import criterion, dice_coef, iou_coef
 from metric.base import Metric
 from models.models import build_model, load_model
-from utils.utils import fix_seed, plot_batch
+from utils.utils import fix_seed
 from utils.utils import parse_with_config
 
 c_  = Fore.GREEN
@@ -194,6 +191,7 @@ def run_training(model, model_name, optimizer, scheduler, device, num_epochs, tr
             best_model_wts = copy.deepcopy(model.state_dict())
             PATH = f"checkpoints/{model_name}_best_epoch-{fold:02d}.bin"
             torch.save(model.state_dict(), PATH)
+            
             # Save a model file from the current directory
             wandb.save(PATH)
             print(f"Model Saved{sr_}")
@@ -239,7 +237,6 @@ def fetch_scheduler(optimizer, scheduler, min_lr, T_0, T_max):
 def main(args: argparse.Namespace):
     # time
     now = datetime.datetime.now()
-    now_str = now.strftime("%Y-%m-%d_%H%M%S")
 
     # seedの固定
     fix_seed(args.seed, args.no_deterministic)
